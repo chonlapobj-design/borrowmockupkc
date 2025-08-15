@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ระบบบันทึกการยืม-คืนของใช้ (TH) • แชร์ข้อมูลร่วมกันด้วย Supabase</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{--bg:#f7f7fb;--card:#ffffff;--text:#202124;--muted:#5f6368;--primary:#2563eb;--primary-weak:#e6efff;--ok:#16a34a;--warn:#dc2626;--border:#e5e7eb;--chip:#eef2ff;}
+  *{box-sizing:border-box} html,body{height:100%}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Thai","Sarabun","TH Sarabun New","Helvetica Neue",Arial,"Noto Color Emoji","Apple Color Emoji",sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
+  header{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid var(--border)}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  h1{margin:8px 0 0 0;font-size:1.6rem}.sub{color:var(--muted);margin-top:4px}
+  .grid{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;align-items:start}@media(max-width:980px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .card .hd{padding:14px 16px;border-bottom:1px solid var(--border);font-weight:600;display:flex;gap:8px;align-items:center;justify-content:space-between}
+  .card .bd{padding:14px 16px}
+  .row{display:grid;gap:12px;grid-template-columns:repeat(12,1fr);margin-bottom:12px}
+  .row .col-12{grid-column:span 12}.row .col-6{grid-column:span 6}.row .col-4{grid-column:span 4}
+  @media(max-width:640px){.row{grid-template-columns:1fr}.row [class*="col-"]{grid-column:auto}}
+  label{display:block;font-size:.92rem;color:var(--muted);margin-bottom:6px}
+  input[type="text"],input[type="number"],input[type="date"],textarea,select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff}
+  textarea{min-height:84px;resize:vertical}input[type="file"]{font-size:.9rem}
+  .hint{font-size:.85rem;color:var(--muted)}
+  .btn{appearance:none;border:1px solid transparent;background:var(--primary);color:#fff;padding:10px 14px;border-radius:10px;font-weight:600;cursor:pointer}
+  .btn.secondary{background:#fff;color:var(--primary);border-color:var(--primary)}.btn.ghost{background:#fff;color:var(--text);border-color:var(--border)}
+  .btn.warn{background:var(--warn);border-color:var(--warn)}.btn.ok{background:var(--ok);border-color:var(--ok)}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px}.toolbar .grow{flex:1}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:.95rem}
+  th,td{padding:10px 8px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border)}
+  th{position:sticky;top:0;background:#fff;z-index:1}
+  tbody tr.overdue{background:#fff5f5}
+  .status{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;font-size:.82rem;background:var(--chip)}
+  .status.active{background:#fff3d4}.status.returned{background:#e8fff0}
+  .thumb{width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid var(--border);cursor:pointer}
+  .empty{padding:16px;color:var(--muted)}.kpi{display:flex;gap:12px;flex-wrap:wrap}
+  .kpi .pill{background:var(--primary-weak);color:var(--primary);padding:8px 10px;border-radius:10px;font-size:.9rem}
+  .soft{color:var(--muted)}.right{justify-content:flex-end}.actions{display:flex;gap:6px;flex-wrap:wrap}
+  .footnote{margin-top:8px;font-size:.85rem;color:var(--muted)}.danger{color:var(--warn)}
+  .preview-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;padding:20px}
+  .preview-modal img{max-width:90vw;max-height:85vh;border-radius:12px;background:#000}
+  .close-x{position:absolute;top:12px;right:12px;font-weight:700;background:#fff;border:1px solid var(--border);padding:6px 10px;border-radius:8px;cursor:pointer}
+  .note{background:#fffbe6;border:1px dashed #f59e0b;padding:10px 12px;border-radius:10px;font-size:.9rem}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>ระบบบันทึกการยืม-คืนของใช้</h1>
+    <div class="sub">เวอร์ชันแชร์ข้อมูลร่วมกันผ่านฐานข้อมูล Supabase</div>
+  </div>
+</header>
+
+<main class="wrap" style="margin-top:12px">
+  <div class="grid">
+    <section class="card" aria-label="ฟอร์มเพิ่มรายการยืม">
+      <div class="hd">เพิ่มรายการยืมใหม่</div>
+      <div class="bd">
+        <form id="borrowForm">
+          <div class="row">
+            <div class="col-6"><label for="itemName">ชื่อรายการ</label><input id="itemName" type="text" required placeholder="เช่น สว่านไฟฟ้า"></div>
+            <div class="col-6"><label for="quantity">จำนวน</label><input id="quantity" type="number" inputmode="numeric" min="1" step="1" value="1" required></div>
+            <div class="col-12"><label for="description">รายละเอียด</label><textarea id="description" placeholder="ระบุสภาพ/อุปกรณ์เสริม/หมายเหตุ"></textarea></div>
+          </div>
+          <div class="row">
+            <div class="col-6"><label for="borrowerName">ชื่อผู้ยืม</label><input id="borrowerName" type="text" required placeholder="ชื่อ-นามสกุล"></div>
+            <div class="col-6"><label for="contact">ช่องทางติดต่อ</label><input id="contact" type="text" placeholder="โทร/LINE/อีเมล"></div>
+          </div>
+          <div class="row">
+            <div class="col-4"><label for="borrowDate">วันที่ยืม</label><input id="borrowDate" type="date" required></div>
+            <div class="col-4"><label for="dueDate">กำหนดคืน</label><input id="dueDate" type="date"></div>
+            <div class="col-4"><label for="image">รูปของที่ยืม</label><input id="image" type="file" accept="image/*" capture="environment"><div class="hint">รองรับลาก-วาง/วางจากคลิปบอร์ด • ระบบจะย่อรูปอัตโนมัติ</div></div>
+          </div>
+          <div class="row"><div class="col-12"><div class="toolbar right"><button class="btn ghost" type="reset">ล้างฟอร์ม</button><button class="btn" type="submit">บันทึกรายการ</button></div></div></div>
+        </form>
+        <div class="note" style="margin-top:8px">คลิกที่รูปในตารางเพื่อดูภาพขนาดใหญ่ • แก้ไข/ลบ/ทำเครื่องหมายคืนได้จากปุ่มในแต่ละแถว</div>
+      </div>
+    </section>
+
+    <section class="card" aria-label="รายการยืมทั้งหมด">
+      <div class="hd">
+        <span>รายการยืม</span>
+        <div class="toolbar">
+          <div class="grow"><input id="search" type="search" placeholder="ค้นหา: รายการ/ผู้ยืม/ติดต่อ/รายละเอียด"></div>
+          <select id="statusFilter" title="กรองสถานะ"><option value="all">ทั้งหมด</option><option value="active">กำลังยืม</option><option value="returned">คืนแล้ว</option></select>
+          <button class="btn ghost" id="printBtn" type="button">พิมพ์</button>
+        </div>
+      </div>
+      <div class="bd">
+        <div class="kpi" id="kpiBar"></div>
+        <div style="overflow:auto; border:1px solid var(--border); border-radius:10px; margin-top:10px">
+          <table>
+            <thead><tr><th>รูป</th><th>รายการ / รายละเอียด</th><th>ผู้ยืม / ติดต่อ</th><th>จำนวน</th><th>วันที่ยืม</th><th>กำหนดคืน</th><th>สถานะ</th><th>การทำงาน</th></tr></thead>
+            <tbody id="listBody"><tr><td colspan="8" class="empty">กำลังโหลดข้อมูล...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="toolbar" style="margin-top:12px">
+          <div class="toolbar" style="gap:6px">
+            <button class="btn secondary" id="exportCsvBtn" type="button">ส่งออก CSV</button>
+            <button class="btn secondary" id="exportJsonBtn" type="button">ส่งออก JSON</button>
+          </div>
+          <div class="footnote">ข้อมูลถูกเก็บใน Supabase (แชร์ร่วมกันทุกคนที่เปิดลิงก์นี้)</div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div class="preview-modal" id="previewModal" role="dialog" aria-modal="true" aria-label="ดูรูปภาพ">
+  <button class="close-x" id="closePreview">ปิด</button>
+  <img id="previewImg" alt="ภาพขนาดใหญ่">
+</div>
+
+<script>
+  // --- Supabase config (already filled) ---
+  const SUPABASE_URL = "https://igncdinmsmkrbteoifcz.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlnbmNkaW5tc21rcmJ0ZW9pZmN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyMzE3NjIsImV4cCI6MjA3MDgwNzc2Mn0.-xhYcVtdAPuRTAjBWt8uOWrkb3irCye1WO46lXkPTj0";
+  const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+</script>
+
+<script>
+(function(){'use strict';
+  const $$=(s,r=document)=>r.querySelector(s);
+  const todayStr=()=>new Date().toISOString().slice(0,10);
+  const form=$$('#borrowForm'), itemName=$$('#itemName'), quantity=$$('#quantity'), description=$$('#description'),
+        borrowerName=$$('#borrowerName'), contact=$$('#contact'), borrowDate=$$('#borrowDate'),
+        dueDate=$$('#dueDate'), imageInput=$$('#image'), listBody=$$('#listBody'),
+        searchInput=$$('#search'), statusFilter=$$('#statusFilter'), printBtn=$$('#printBtn'),
+        exportCsvBtn=$$('#exportCsvBtn'), exportJsonBtn=$$('#exportJsonBtn'), kpiBar=$$('#kpiBar'),
+        previewModal=$$('#previewModal'), previewImg=$$('#previewImg'), closePreview=$$('#closePreview');
+  borrowDate.value=todayStr();
+
+  let records=[];
+
+  function fmtDate(d){ if(!d) return '—'; try{ return new Intl.DateTimeFormat('th-TH',{dateStyle:'medium'}).format(new Date(d)); }catch(e){ return d } }
+  function isOverdue(r){ if(r.returned) return false; if(!r.due_date) return false; const t=new Date();t.setHours(0,0,0,0); const du=new Date(r.due_date); du.setHours(0,0,0,0); return t>du; }
+  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',\"'\":'&#039;'}[m])); }
+  function csvSafe(s){ const v=(s??'').toString(); return /[\",\n]/.test(v) ? '\"'+v.replace(/\"/g,'\"\"')+'\"' : v; }
+  function download(filename,text){ const a=document.createElement('a'); a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(text); a.download=filename; document.body.appendChild(a); a.click(); a.remove(); }
+  async function compressImage(file,maxSize=800){ return new Promise((resolve,reject)=>{ const r=new FileReader(); r.onerror=()=>reject('อ่านไฟล์รูปไม่สำเร็จ'); r.onload=()=>{ const img=new Image(); img.onload=()=>{ const c=document.createElement('canvas'); let {width:w,height:h}=img; if(w>h){ if(w>maxSize){ h=Math.round(h*(maxSize/w)); w=maxSize; } } else { if(h>maxSize){ w=Math.round(w*(maxSize/h)); h=maxSize; } } c.width=w;c.height=h; const ctx=c.getContext('2d'); ctx.drawImage(img,0,0,w,h); resolve(c.toDataURL('image/jpeg',0.85)); }; img.onerror=()=>reject('แปลงรูปไม่สำเร็จ'); img.src=r.result; }; r.readAsDataURL(file); }); }
+  async function getImageFromInput(current){ const f=imageInput.files&&imageInput.files[0]; if(!f) return current||null; if(!f.type.startsWith('image/')) return null; try{ return await compressImage(f); }catch(e){ alert('ไม่สามารถประมวลผลรูปภาพได้'); return null; } }
+
+  async function fetchRecords(){ const {data,error}=await db.from('borrow_records').select('*').order('created_at',{ascending:false}); if(error){ console.error(error); listBody.innerHTML='<tr><td colspan="8" class="empty">โหลดข้อมูลไม่สำเร็จ</td></tr>'; return; } records=data||[]; render(); }
+  async function addRecord(e){ e.preventDefault(); const img=await getImageFromInput(null); const rec={ item_name:itemName.value.trim(), description:description.value.trim(), quantity:Number(quantity.value)||1, borrower_name:borrowerName.value.trim(), contact:contact.value.trim(), borrow_date:borrowDate.value||todayStr(), due_date:dueDate.value||null, returned:false, returned_date:null, image_data_url:img||null }; if(!rec.item_name||!rec.borrower_name||!rec.borrow_date){ alert('กรุณากรอกข้อมูลที่จำเป็นให้ครบ'); return; } const {data,error}=await db.from('borrow_records').insert(rec).select('*').single(); if(error){ console.error(error); alert('บันทึกไม่สำเร็จ'); return; } form.reset(); borrowDate.value=todayStr(); records.unshift(data); render(); }
+  function editRecord(id){ const rec=records.find(r=>r.id===id); if(!rec) return; itemName.value=rec.item_name||''; description.value=rec.description||''; quantity.value=rec.quantity||1; borrowerName.value=rec.borrower_name||''; contact.value=rec.contact||''; borrowDate.value=rec.borrow_date||todayStr(); dueDate.value=rec.due_date||''; const btn=form.querySelector('button[type="submit"]'); const orig=btn.textContent; btn.textContent='อัปเดตรายการ'; form.onsubmit=async (ev)=>{ ev.preventDefault(); const img=await getImageFromInput(rec.image_data_url); const patch={ item_name:itemName.value.trim(), description:description.value.trim(), quantity:Number(quantity.value)||1, borrower_name:borrowerName.value.trim(), contact:contact.value.trim(), borrow_date:borrowDate.value||todayStr(), due_date:dueDate.value||null, image_data_url:img||null }; const {data,error}=await db.from('borrow_records').update(patch).eq('id',id).select('*').single(); if(error){ console.error(error); alert('อัปเดตไม่สำเร็จ'); return; } form.reset(); borrowDate.value=todayStr(); btn.textContent=orig; form.onsubmit=addRecord; const i=records.findIndex(r=>r.id===id); if(i>=0) records[i]=data; render(); }; }
+  async function deleteRecord(id){ if(!confirm('ลบรายการนี้หรือไม่?')) return; const {error}=await db.from('borrow_records').delete().eq('id',id); if(error){ console.error(error); alert('ลบไม่สำเร็จ'); return; } records=records.filter(r=>r.id!==id); render(); }
+  async function toggleReturn(id){ const rec=records.find(r=>r.id===id); if(!rec) return; const patch=rec.returned?{returned:false,returned_date:null}:{returned:true,returned_date:new Date().toISOString().slice(0,10)}; const {data,error}=await db.from('borrow_records').update(patch).eq('id',id).select('*').single(); if(error){ console.error(error); alert('อัปเดตสถานะไม่สำเร็จ'); return; } const i=records.findIndex(r=>r.id===id); if(i>=0) records[i]=data; render(); }
+
+  function exportCSV(){ const cols=['id','ชื่อรายการ','รายละเอียด','จำนวน','ชื่อผู้ยืม','ติดต่อ','วันที่ยืม','กำหนดคืน','สถานะ','วันที่คืน','สร้างเมื่อ']; const lines=[cols.join(',')]; for(const r of records){ const row=[ r.id, csvSafe(r.item_name), csvSafe(r.description), r.quantity, csvSafe(r.borrower_name), csvSafe(r.contact), r.borrow_date||'', r.due_date||'', r.returned?'returned':'active', r.returned_date||'', r.created_at||'' ]; lines.push(row.join(',')); } download('borrow-records-shared.csv', lines.join('\n')); }
+  function exportJSON(){ download('borrow-records-shared.json', JSON.stringify(records,null,2)); }
+
+  function render(){ const kw=(searchInput.value||'').trim().toLowerCase(); const st=statusFilter.value; const filtered=records.filter(r=>{ const ok=st==='all'?true:(st==='active'?!r.returned:r.returned); if(!ok) return false; if(!kw) return true; const blob=[r.item_name,r.description,r.borrower_name,r.contact].join(' ').toLowerCase(); return blob.includes(kw); }).sort((a,b)=>(a.returned===b.returned?0:(a.returned?1:-1))||(b.borrow_date||'').localeCompare(a.borrow_date||'')); listBody.innerHTML=''; if(!filtered.length){ const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=8; td.className='empty'; td.textContent='ไม่พบรายการ'; tr.appendChild(td); listBody.appendChild(tr); } else { for(const r of filtered){ const tr=document.createElement('tr'); if(isOverdue(r)) tr.classList.add('overdue'); const tdImg=document.createElement('td'); if(r.image_data_url){ const img=new Image(); img.src=r.image_data_url; img.className='thumb'; img.alt=r.item_name||'รูป'; img.onclick=()=>{ previewImg.src=r.image_data_url; previewModal.style.display='flex'; }; tdImg.appendChild(img); } else { tdImg.innerHTML='<span class="soft">—</span>'; } const tdItem=document.createElement('td'); const nm=document.createElement('div'); nm.style.fontWeight='600'; nm.textContent=r.item_name||'(ไม่มีชื่อรายการ)'; const ds=document.createElement('div'); ds.className='soft'; ds.textContent=r.description||''; tdItem.appendChild(nm); tdItem.appendChild(ds); const tdBorrower=document.createElement('td'); tdBorrower.innerHTML=`<div>${escapeHtml(r.borrower_name||'')}</div><div class="soft">${escapeHtml(r.contact||'')}</div>`; const tdQty=document.createElement('td'); tdQty.textContent=r.quantity??''; const tdBorrowDate=document.createElement('td'); tdBorrowDate.textContent=fmtDate(r.borrow_date); const tdDueDate=document.createElement('td'); tdDueDate.innerHTML=r.due_date?(isOverdue(r)?`<span class="danger">${fmtDate(r.due_date)}</span>`:fmtDate(r.due_date)):'—'; const tdStatus=document.createElement('td'); const st=document.createElement('span'); st.className='status '+(r.returned?'returned':'active'); st.textContent=r.returned?`คืนแล้ว${r.returned_date?' • '+fmtDate(r.returned_date):''}`:'กำลังยืม'; tdStatus.appendChild(st); const tdAct=document.createElement('td'); const actions=document.createElement('div'); actions.className='actions'; const b1=document.createElement('button'); b1.className='btn '+(r.returned?'ghost':'ok'); b1.textContent=r.returned?'ยกเลิกการคืน':'ทำเครื่องหมายคืน'; b1.onclick=()=>toggleReturn(r.id); const b2=document.createElement('button'); b2.className='btn ghost'; b2.textContent='แก้ไข'; b2.onclick=()=>editRecord(r.id); const b3=document.createElement('button'); b3.className='btn warn'; b3.textContent='ลบ'; b3.onclick=()=>deleteRecord(r.id); actions.appendChild(b1); actions.appendChild(b2); actions.appendChild(b3); tdAct.appendChild(actions); tr.appendChild(tdImg); tr.appendChild(tdItem); tr.appendChild(tdBorrower); tr.appendChild(tdQty); tr.appendChild(tdBorrowDate); tr.appendChild(tdDueDate); tr.appendChild(tdStatus); tr.appendChild(tdAct); listBody.appendChild(tr); } } const active=records.filter(r=>!r.returned).length, returned=records.filter(r=>r.returned).length, overdue=records.filter(r=>!r.returned && r.due_date && isOverdue(r)).length; kpiBar.innerHTML=''; const el1=document.createElement('div'); el1.className='pill'; el1.textContent=`กำลังยืม: ${active}`; const el2=document.createElement('div'); el2.className='pill'; el2.textContent=`คืนแล้ว: ${returned}`; const el3=document.createElement('div'); el3.className='pill'; el3.textContent=`เกินกำหนด: ${overdue}`; kpiBar.appendChild(el1); kpiBar.appendChild(el2); kpiBar.appendChild(el3); }
+
+  closePreview.addEventListener('click', ()=> previewModal.style.display='none');
+  previewModal.addEventListener('click', (e)=>{ if(e.target===previewModal) previewModal.style.display='none'; });
+  printBtn.addEventListener('click', ()=> window.print());
+  exportCsvBtn.addEventListener('click', exportCSV);
+  exportJsonBtn.addEventListener('click', exportJSON);
+  form.addEventListener('submit', addRecord);
+  searchInput.addEventListener('input', render);
+  statusFilter.addEventListener('change', render);
+
+  fetchRecords();
+  db.channel('room:borrow_records').on('postgres_changes',{event:'*',schema:'public',table:'borrow_records'},()=>fetchRecords()).subscribe();
+})();</script>
+
+<!-- SQL (run once in Supabase SQL Editor)
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE TABLE public.borrow_records (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  item_name text NOT NULL,
+  description text,
+  quantity int NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  image_data_url text,
+  borrower_name text NOT NULL,
+  contact text,
+  borrow_date date NOT NULL,
+  due_date date,
+  returned boolean NOT NULL DEFAULT false,
+  returned_date date,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.borrow_records ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public read"   ON public.borrow_records FOR SELECT USING (true);
+CREATE POLICY "Allow public insert" ON public.borrow_records FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update" ON public.borrow_records FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete" ON public.borrow_records FOR DELETE USING (true);
+-->
+</body>
+</html>
