@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {setupAuth} from './auth.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -11,6 +12,7 @@ const db=new DatabaseSync(path.join(dir,'borrow.sqlite'));
 db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
 CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY,item TEXT NOT NULL,borrower TEXT NOT NULL,contact TEXT NOT NULL DEFAULT '',description TEXT NOT NULL DEFAULT '',quantity INTEGER NOT NULL CHECK(quantity>0),borrow_date TEXT NOT NULL,due_date TEXT,returned_date TEXT,photo TEXT,thumb TEXT,version INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS records_dates ON records(returned_date,borrow_date);`);
+const auth=setupAuth(db,dir);
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const dateOK=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
 function fail(message,status=400){throw Object.assign(new Error(message),{status});}
@@ -40,6 +42,11 @@ const server=http.createServer(async(req,res)=>{
    const key=req.socket.remoteAddress;let l=limits.get(key);if(!l||l.until<Date.now()){l={count:0,until:Date.now()+60000};limits.set(key,l);}if(++l.count>120)fail('ส่งคำขอมากเกินไป กรุณารอสักครู่',429);
   }
   if(u.pathname==='/api/health'&&req.method==='GET'){db.prepare('SELECT 1').get();return json(200,{ok:true});}
+  if(await auth.route(req,res,u.pathname,body,json))return;
+  const employee=auth.user(req);
+  if((u.pathname.startsWith('/api/')||u.pathname.startsWith('/photos/'))&&!employee)fail('กรุณาเข้าสู่ระบบ',401);
+  const historyMatch=u.pathname.match(/^\/api\/records\/([0-9a-f-]{36})\/activity$/);
+  if(historyMatch&&req.method==='GET')return json(200,{rows:auth.history(historyMatch[1])});
   if(u.pathname==='/api/records'&&req.method==='GET'){
    const q=(u.searchParams.get('q')||'').slice(0,160),status=u.searchParams.get('status')||'active',page=Math.max(1,Math.min(100000,parseInt(u.searchParams.get('page'))||1));
    const archive=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
@@ -49,24 +56,29 @@ const server=http.createServer(async(req,res)=>{
    const total=db.prepare(`SELECT count(*) n FROM records WHERE ${filter}`).get(...args).n;
    const rows=db.prepare(`SELECT * FROM records WHERE ${filter} ORDER BY borrow_date DESC,created_at DESC LIMIT 20 OFFSET ?`).all(...args,(page-1)*20);
    const counts=db.prepare('SELECT count(*) total,sum(returned_date IS NULL) active,sum(returned_date IS NULL AND due_date < ?) overdue,sum(returned_date IS NOT NULL) returned FROM records').get(today());
-   return json(200,{rows,total,page,counts,today:today()});
+   return json(200,{rows:rows.map(auth.decorate),total,page,counts,today:today()});
   }
   if(u.pathname==='/api/records'&&req.method==='POST'){
    const b=await body(req),v=validate(b);if(!/^[0-9a-f-]{36}$/.test(b.id||''))fail('รหัสคำขอไม่ถูกต้อง');
    const existing=db.prepare('SELECT * FROM records WHERE id=?').get(b.id);if(existing)return json(200,existing);
-   const p=photos(b);try{db.prepare('INSERT INTO records(id,item,borrower,contact,description,quantity,borrow_date,due_date,photo,thumb,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(b.id,v.item,v.borrower,v.contact,v.description,v.quantity,v.borrow_date,v.due_date,p.photo||null,p.thumb||null,new Date().toISOString());}catch(e){removePhotos(p);throw e;}
+   const p=photos(b);db.exec('BEGIN');try{db.prepare('INSERT INTO records(id,item,borrower,contact,description,quantity,borrow_date,due_date,photo,thumb,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(b.id,v.item,v.borrower,v.contact,v.description,v.quantity,v.borrow_date,v.due_date,p.photo||null,p.thumb||null,new Date().toISOString(),employee.id);auth.audit(b.id,employee,'create');db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');removePhotos(p);throw e;}
    return json(201,db.prepare('SELECT * FROM records WHERE id=?').get(b.id));
   }
   const match=u.pathname.match(/^\/api\/records\/([0-9a-f-]{36})$/);
   if(match&&req.method==='PATCH'){
    const b=await body(req),r=db.prepare('SELECT * FROM records WHERE id=?').get(match[1]);if(!r)fail('ไม่พบรายการ',404);if(b.version!==r.version)fail('รายการนี้ถูกแก้ไขแล้ว กรุณาโหลดข้อมูลใหม่',409);
-   if(b.action==='return'||b.action==='reopen'){db.prepare('UPDATE records SET returned_date=?,version=version+1 WHERE id=?').run(b.action==='return'?today():null,r.id);}
-   else{const v=validate(b),p=photos(b);try{db.prepare('UPDATE records SET item=?,borrower=?,contact=?,description=?,quantity=?,borrow_date=?,due_date=?,photo=?,thumb=?,version=version+1 WHERE id=?').run(v.item,v.borrower,v.contact,v.description,v.quantity,v.borrow_date,v.due_date,p.photo||r.photo,p.thumb||r.thumb,r.id);}catch(e){removePhotos(p);throw e;}if(p.photo)removePhotos(r);}
+   let p={};db.exec('BEGIN');
+   try{
+    if(b.action==='return'||b.action==='reopen'){db.prepare('UPDATE records SET returned_date=?,version=version+1 WHERE id=?').run(b.action==='return'?today():null,r.id);}
+    else{const v=validate(b);p=photos(b);db.prepare('UPDATE records SET item=?,borrower=?,contact=?,description=?,quantity=?,borrow_date=?,due_date=?,photo=?,thumb=?,version=version+1 WHERE id=?').run(v.item,v.borrower,v.contact,v.description,v.quantity,v.borrow_date,v.due_date,p.photo||r.photo,p.thumb||r.thumb,r.id);}
+    auth.audit(r.id,employee,['return','reopen'].includes(b.action)?b.action:'edit');db.exec('COMMIT');
+   }catch(e){db.exec('ROLLBACK');removePhotos(p);throw e;}
+   if(p.photo)removePhotos(r);
    return json(200,db.prepare('SELECT * FROM records WHERE id=?').get(r.id));
   }
   if(req.method!=='GET'&&req.method!=='HEAD')fail('ไม่รองรับคำขอนี้',405);
   let file,type;
-  if(/^\/photos\/[0-9a-f-]+(?:-t)?\.jpg$/.test(u.pathname)){file=path.join(dir,u.pathname);type='image/jpeg';res.setHeader('Cache-Control','public,max-age=86400');}
+  if(/^\/photos\/[0-9a-f-]+(?:-t)?\.jpg$/.test(u.pathname)){file=path.join(dir,u.pathname);type='image/jpeg';res.setHeader('Cache-Control','private,no-store');}
   else{const files={'/':['index.html','text/html; charset=utf-8'],'/app.js':['app.js','text/javascript; charset=utf-8'],'/style.css':['style.css','text/css; charset=utf-8']};const entry=files[u.pathname];if(!entry)fail('ไม่พบหน้า',404);file=path.join(root,'public',entry[0]);type=entry[1];res.setHeader('Cache-Control','no-cache');}
   if(!fs.existsSync(file))fail('ไม่พบไฟล์',404);res.writeHead(200,{'Content-Type':type});if(req.method==='HEAD')res.end();else fs.createReadStream(file).pipe(res);
  }catch(e){if(!res.headersSent)json(e.status||500,{error:e.status?e.message:'ระบบขัดข้อง กรุณาลองใหม่'});else res.end();if(!e.status)console.error(e);}
