@@ -35,6 +35,12 @@ Schedule daily, retain at least 7 daily and 4 weekly versions, and copy backups 
 - Archive is a date-based view, not disk cleanup. Photo expiration can be added after an explicit retention period is chosen.
 - Server validates JPEG signatures and size; it does not decode/re-encode untrusted images. Browser normalization is a convenience, not a security boundary. A hardened public upload deployment should add server-side decoding/re-encoding.
 
-## Launch checklist still requiring environment setup
+## Live deployment (30 September 2026)
 
-Choose domain, push reviewed source to GitHub, create Coolify application/volume/resource limits, configure daily off-server backups, verify restore and production workflow. No changes to Z.com or existing applications are performed by these files.
+- URL: https://kcmockup.118.27.151.202.sslip.io
+- Z.com server: kc-production-01; Coolify project: KC Mockup Library; application: kcmockup.
+- Source branch: `codex/lightweight-v2`; deployed application commit: `dc1409f4e5b00c65639135f8f32caada47238ab5`.
+- Dedicated persistent volume mounted at `/data`; limits set to 512 MiB memory and 1 CPU. Idle sample after deployment: 17.35 MiB RAM and 0.28% CPU; this is not a load-test result.
+- Coolify volume backups: daily at 02:00 Asia/Bangkok (19:00 UTC), retain 7 local backups. The app briefly stops during archive creation for consistency. Off-server copies are not configured.
+- Verified HTTPS, save/return, persistence after backup restart, and isolated backup database readback with SQLite integrity check. Temporary production test record removed; live database starts empty. Existing seven workloads remained healthy.
+- Off-server backup storage remains an operations follow-up. The address uses sslip.io and depends on that DNS service and the current server IP.
