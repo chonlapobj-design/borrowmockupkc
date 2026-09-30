@@ -26,7 +26,7 @@ export function setupAuth(db,dir){
   if(url==='/api/auth/logout'){const token=(req.headers.cookie||'').match(/kc_session=([a-f0-9]{64})/)?.[1];if(token)db.prepare('DELETE FROM sessions WHERE token=?').run(digest(token));cookie(res,'',0);json(200,{ok:true});return true;}
   if(!['/api/auth/login','/api/auth/register'].includes(url))error('ไม่พบหน้า',404);
   const b=await body(req),username=String(b.username||'').trim().toLowerCase(),password=String(b.password||'');
-  if(!/^[a-z0-9._-]{3,40}$/.test(username)||password.length<10||password.length>128)error('ชื่อผู้ใช้ 3–40 ตัว (a-z, 0-9, . _ -) และรหัสผ่าน 10–128 ตัว');
+  if(!/^[a-z0-9._-]{3,40}$/.test(username)||password.length<1||password.length>128)error('ชื่อผู้ใช้ 3–40 ตัว (a-z, 0-9, . _ -) และรหัสผ่าน 1–128 ตัว');
   const now=Date.now();for(const [k,v] of attempts)if(v.until<now)attempts.delete(k);
   for(const key of ['all',username]){let a=attempts.get(key);if(!a){a={n:0,until:now+15*60000};attempts.set(key,a);}if(++a.n>(key==='all'?100:10))error('ลองหลายครั้งเกินไป กรุณารอ 15 นาที',429);}
   let u;

@@ -17,8 +17,9 @@ legacy.exec("CREATE TABLE records(id TEXT PRIMARY KEY,item TEXT NOT NULL,borrowe
 legacy.close();await start();
 assert.equal((await req('/api/records')).status,401);
 assert.equal((await req('/photos/123.jpg')).status,401);
-const account={name:'Employee One',username:'employee.one',password:'Long-test-password',invitation:'test-invitation',remember:true};
+const account={name:'Employee One',username:'employee.one',password:'x',invitation:'test-invitation',remember:true};
 assert.equal((await req('/api/auth/register','POST',{...account,invitation:'wrong'})).status,403);
+assert.equal((await req('/api/auth/register','POST',{...account,password:''})).status,400);
 const registration=await req('/api/auth/register','POST',account);assert.equal(registration.status,200);assert.match(registration.cookie,/HttpOnly/);assert.match(registration.cookie,/SameSite=Strict/);assert.match(registration.cookie,/Max-Age=2592000/);cookie=registration.cookie.split(';')[0];const firstUser=registration.data.user;
 const migrated=(await req('/api/records?status=archived')).data.rows[0];assert.equal(migrated.item,'Old record');assert.equal(migrated.creator,null);
 assert.equal((await req('/api/auth/register','POST',{...account,username:'EMPLOYEE.ONE'})).status,409);

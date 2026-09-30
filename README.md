@@ -6,7 +6,7 @@ Lightweight Thai borrowing register, employee accounts with invitation-only self
 
 Run `node server.mjs`, open http://localhost:3000. Run `node --test test/app.test.mjs` for API integration tests. The equivalent `npm start` and `npm test` scripts are also provided. No dependency installation is required. Data defaults to `./data`; set DATA_DIR and PORT as needed. Node 24's SQLite API may emit an experimental warning.
 
-Sign-in is required to view records and photos. Employees register once with a company invitation code, name, username and a password of at least 10 characters. All signed-in employees share visibility and can edit records. Creator identity is assigned by the server and retained; activity history captures create/edit/return/reopen. Keep borrower contact data appropriate to the chosen audience. Do not expose the data directory directly. Use HTTPS and the same origin for UI and API.
+Sign-in is required to view records and photos. Employees register once with a company invitation code, name, username and a non-empty password (up to 128 characters). All signed-in employees share visibility and can edit records. Creator identity is assigned by the server and retained; activity history captures create/edit/return/reopen. Keep borrower contact data appropriate to the chosen audience. Do not expose the data directory directly. Use HTTPS and the same origin for UI and API.
 
 ## Coolify deployment
 
