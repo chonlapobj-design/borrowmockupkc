@@ -1,5 +1,5 @@
 import http from 'node:http';
-import {setupAuth} from './auth.mjs';
+import {setupRecords,issuers} from './records.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -12,12 +12,13 @@ const db=new DatabaseSync(path.join(dir,'borrow.sqlite'));
 db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
 CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY,item TEXT NOT NULL,borrower TEXT NOT NULL,contact TEXT NOT NULL DEFAULT '',description TEXT NOT NULL DEFAULT '',quantity INTEGER NOT NULL CHECK(quantity>0),borrow_date TEXT NOT NULL,due_date TEXT,returned_date TEXT,photo TEXT,thumb TEXT,version INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS records_dates ON records(returned_date,borrow_date);`);
-const auth=setupAuth(db,dir);
+const records=setupRecords(db);
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const dateOK=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
 function fail(message,status=400){throw Object.assign(new Error(message),{status});}
 function validate(b){
- const out={};
+ const out={issuer:b.issuer};
+ if(!issuers.includes(out.issuer))fail('กรุณาเลือกผู้่ทำเรื่องเบิกจากรายชื่อที่กำหนด');
  for(const [k,max] of Object.entries({item:160,borrower:120,contact:160,description:2000})){out[k]=String(b[k]??'').trim();if(out[k].length>max)fail('ข้อความยาวเกินกำหนด');}
  if(!out.item||!out.borrower)fail('กรุณากรอกชื่อรายการและผู้ยืม');
  out.quantity=Number(b.quantity);if(!Number.isInteger(out.quantity)||out.quantity<1||out.quantity>100000)fail('จำนวนไม่ถูกต้อง');
@@ -42,26 +43,24 @@ const server=http.createServer(async(req,res)=>{
    const key=req.socket.remoteAddress;let l=limits.get(key);if(!l||l.until<Date.now()){l={count:0,until:Date.now()+60000};limits.set(key,l);}if(++l.count>120)fail('ส่งคำขอมากเกินไป กรุณารอสักครู่',429);
   }
   if(u.pathname==='/api/health'&&req.method==='GET'){db.prepare('SELECT 1').get();return json(200,{ok:true});}
-  if(await auth.route(req,res,u.pathname,body,json))return;
-  const employee=auth.user(req);
-  if((u.pathname.startsWith('/api/')||u.pathname.startsWith('/photos/'))&&!employee)fail('กรุณาเข้าสู่ระบบ',401);
+  if(u.pathname.startsWith('/api/auth/'))fail('ไม่ต้องเข้าสู่ระบบแล้ว กรุณาโหลดหน้าใหม่',410);
   const historyMatch=u.pathname.match(/^\/api\/records\/([0-9a-f-]{36})\/activity$/);
-  if(historyMatch&&req.method==='GET')return json(200,{rows:auth.history(historyMatch[1])});
+  if(historyMatch&&req.method==='GET')return json(200,{rows:records.history(historyMatch[1])});
   if(u.pathname==='/api/records'&&req.method==='GET'){
    const q=(u.searchParams.get('q')||'').slice(0,160),status=u.searchParams.get('status')||'active',page=Math.max(1,Math.min(100000,parseInt(u.searchParams.get('page'))||1));
    const archive=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
    const where={active:'returned_date IS NULL',overdue:'returned_date IS NULL AND due_date < ?',returned:'returned_date IS NOT NULL AND returned_date > ?',archived:'returned_date IS NOT NULL AND returned_date <= ?'}[status]||'1=1';
    const args=status==='overdue'?[today()]:['returned','archived'].includes(status)?[archive]:[];
-   const filter=`(${where}) AND (instr(lower(item||' '||borrower||' '||contact||' '||description),lower(?))>0)`;args.push(q);
+   const filter=`(${where}) AND (instr(lower(item||' '||borrower||' '||contact||' '||description||' '||coalesce(issuer,'')),lower(?))>0)`;args.push(q);
    const total=db.prepare(`SELECT count(*) n FROM records WHERE ${filter}`).get(...args).n;
    const rows=db.prepare(`SELECT * FROM records WHERE ${filter} ORDER BY borrow_date DESC,created_at DESC LIMIT 20 OFFSET ?`).all(...args,(page-1)*20);
    const counts=db.prepare('SELECT count(*) total,sum(returned_date IS NULL) active,sum(returned_date IS NULL AND due_date < ?) overdue,sum(returned_date IS NOT NULL) returned FROM records').get(today());
-   return json(200,{rows:rows.map(auth.decorate),total,page,counts,today:today()});
+   return json(200,{rows:rows.map(records.decorate),total,page,counts,today:today()});
   }
   if(u.pathname==='/api/records'&&req.method==='POST'){
    const b=await body(req),v=validate(b);if(!/^[0-9a-f-]{36}$/.test(b.id||''))fail('รหัสคำขอไม่ถูกต้อง');
    const existing=db.prepare('SELECT * FROM records WHERE id=?').get(b.id);if(existing)return json(200,existing);
-   const p=photos(b);db.exec('BEGIN');try{db.prepare('INSERT INTO records(id,item,borrower,contact,description,quantity,borrow_date,due_date,photo,thumb,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(b.id,v.item,v.borrower,v.contact,v.description,v.quantity,v.borrow_date,v.due_date,p.photo||null,p.thumb||null,new Date().toISOString(),employee.id);auth.audit(b.id,employee,'create');db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');removePhotos(p);throw e;}
+   const p=photos(b);db.exec('BEGIN');try{db.prepare('INSERT INTO records(id,item,borrower,contact,description,quantity,borrow_date,due_date,photo,thumb,created_at,issuer) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(b.id,v.item,v.borrower,v.contact,v.description,v.quantity,v.borrow_date,v.due_date,p.photo||null,p.thumb||null,new Date().toISOString(),v.issuer);records.audit(b.id,v.issuer,'create');db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');removePhotos(p);throw e;}
    return json(201,db.prepare('SELECT * FROM records WHERE id=?').get(b.id));
   }
   const match=u.pathname.match(/^\/api\/records\/([0-9a-f-]{36})$/);
@@ -70,8 +69,8 @@ const server=http.createServer(async(req,res)=>{
    let p={};db.exec('BEGIN');
    try{
     if(b.action==='return'||b.action==='reopen'){db.prepare('UPDATE records SET returned_date=?,version=version+1 WHERE id=?').run(b.action==='return'?today():null,r.id);}
-    else{const v=validate(b);p=photos(b);db.prepare('UPDATE records SET item=?,borrower=?,contact=?,description=?,quantity=?,borrow_date=?,due_date=?,photo=?,thumb=?,version=version+1 WHERE id=?').run(v.item,v.borrower,v.contact,v.description,v.quantity,v.borrow_date,v.due_date,p.photo||r.photo,p.thumb||r.thumb,r.id);}
-    auth.audit(r.id,employee,['return','reopen'].includes(b.action)?b.action:'edit');db.exec('COMMIT');
+    else{const v=validate(b);p=photos(b);db.prepare('UPDATE records SET item=?,borrower=?,contact=?,description=?,quantity=?,borrow_date=?,due_date=?,photo=?,thumb=?,issuer=?,version=version+1 WHERE id=?').run(v.item,v.borrower,v.contact,v.description,v.quantity,v.borrow_date,v.due_date,p.photo||r.photo,p.thumb||r.thumb,v.issuer,r.id);}
+    records.audit(r.id,['return','reopen'].includes(b.action)?r.issuer:b.issuer,['return','reopen'].includes(b.action)?b.action:'edit');db.exec('COMMIT');
    }catch(e){db.exec('ROLLBACK');removePhotos(p);throw e;}
    if(p.photo)removePhotos(r);
    return json(200,db.prepare('SELECT * FROM records WHERE id=?').get(r.id));

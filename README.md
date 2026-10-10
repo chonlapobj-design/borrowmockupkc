@@ -1,12 +1,12 @@
 # KC Mockup Library v2
 
-Lightweight Thai borrowing register, employee accounts with invitation-only self-registration. Node 24, built-in SQLite, no npm runtime dependencies. Photos are separate files; thumbnail lists fetch 20 records at a time. Returned records older than 90 days appear in archived history. Automatic photo deletion is disabled.
+Lightweight Thai borrowing register, no login; required issuer selection. Node 24, built-in SQLite, no npm runtime dependencies. Photos are separate files; thumbnail lists fetch 20 records at a time. Returned records older than 90 days appear in archived history. Automatic photo deletion is disabled.
 
 ## Local use
 
 Run `node server.mjs`, open http://localhost:3000. Run `node --test test/app.test.mjs` for API integration tests. The equivalent `npm start` and `npm test` scripts are also provided. No dependency installation is required. Data defaults to `./data`; set DATA_DIR and PORT as needed. Node 24's SQLite API may emit an experimental warning.
 
-Sign-in is required to view records and photos. Employees register once with a company invitation code, name, username and a non-empty password (up to 128 characters). All signed-in employees share visibility and can edit records. Creator identity is assigned by the server and retained; activity history captures create/edit/return/reopen. Keep borrower contact data appropriate to the chosen audience. Do not expose the data directory directly. Use HTTPS and the same origin for UI and API.
+The app opens directly without registration, passwords or invitation codes. Every new or edited borrowing requires an issuer (ผู้่ทำเรื่องเบิก): ขวัญ, เดือน, อาม, อ้น, จ๋า, จอย, or เจน. This is a selected record label, not a verified identity. Anyone with the app link can view records/photos and update borrowing records.
 
 ## Coolify deployment
 
@@ -46,9 +46,8 @@ Schedule daily, retain at least 7 daily and 4 weekly versions, and copy backups 
 - Off-server backup storage remains an operations follow-up. The address uses sslip.io and depends on that DNS service and the current server IP.
 
 
-## Employee accounts
-Passwords use salted scrypt hashes. Session tokens are stored as hashes and sent in HttpOnly, SameSite=Strict cookies (Secure in production). Standard sessions last 12 hours; “stay signed in” lasts 30 days. Logout revokes the current session. Login/registration are rate limited globally and per username.
+## Issuer selection (10 October 2026)
 
-On first startup, a random company invitation code is saved to `/data/invitation-code` with owner-only file permissions. Retrieve it through the server terminal and share privately with staff. It is not served through the web app or committed to Git. INVITATION_CODE can override it; rotate the file/environment setting and restart this app to invalidate the old code. Existing employee accounts continue working. Back up this file with the database and photos.
+The server validates the fixed issuer list on create/edit. No name is selected by default. Older records keep their contents and historical account attribution; their issuer remains unset until chosen on edit. Return/reopen still works for older records. Activity history snapshots the record issuer without claiming it verifies the person performing the action.
 
-Migration adds employee, session and activity tables plus a nullable creator reference without rewriting existing records. Legacy records display “created before employee accounts.” History shows the latest 100 events per record. Self-service password recovery, employee deactivation and an admin UI are not part of this release; recovery currently requires a trusted operator.
+Existing account/session tables and the old invitation file are retained on disk for historical data and rollback, but no authentication endpoints are active and no account data or secrets are served. The migration only adds nullable issuer columns. The data volume and backup schedule remain unchanged.
