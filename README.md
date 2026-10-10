@@ -51,3 +51,7 @@ Schedule daily, retain at least 7 daily and 4 weekly versions, and copy backups 
 The server validates the fixed issuer list on create/edit. No name is selected by default. Older records keep their contents and historical account attribution; their issuer remains unset until chosen on edit. Return/reopen still works for older records. Activity history snapshots the record issuer without claiming it verifies the person performing the action.
 
 Existing account/session tables and the old invitation file are retained on disk for historical data and rollback, but no authentication endpoints are active and no account data or secrets are served. The migration only adds nullable issuer columns. The data volume and backup schedule remain unchanged.
+
+## Multiple photos
+Records support up to three photos. Add photos together or one at a time, remove individual previews before saving, and browse full images with previous/next controls. Each file is compressed in the browser (15 MB source limit per file); server limits remain 700 KB full image and 100 KB thumbnail per image. The API accepts a final images array of retained record-owned references and new JPEG pairs, with a total 3.4 MB JSON request cap. A nullable images column preserves legacy single photos without rewriting them. Failed validation/conflicts preserve the current image set; removed files are cleaned up only after a committed edit.
+
