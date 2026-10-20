@@ -29,6 +29,8 @@ assert.equal((await req('/api/records/'+legacyId+'/activity')).data.rows[0].name
 assert.equal((await req('/api/records/'+legacyId,'PATCH',{action:'reopen',version:1})).status,200);
 assert.equal((await req('/api/records/'+legacyId,'PATCH',{action:'return',version:2})).status,200);
 const record={id:randomUUID(),issuer:'ขวัญ',item:'<img src=x onerror=alert(1)>',borrower:'ทดสอบ',quantity:2,borrow_date:'2026-09-01',due_date:'2026-09-20'};
+for(const due_date of [undefined,'',null,'2026-08-01','2026-02-30'])assert.equal((await req('/api/records','POST',{...record,due_date})).status,400);
+assert.equal((await req('/api/records/'+legacyId,'PATCH',{...record,due_date:null,version:3})).status,200);
 for(const issuer of [undefined,'','อื่น','ขวัญ ',['ขวัญ']])assert.equal((await req('/api/records','POST',{...record,issuer})).status,400);
 assert.equal((await req('/api/records','POST',{...record,quantity:-1})).status,400);
 assert.equal((await req('/api/records','POST',record,{Origin:'https://other.example'})).status,403);
@@ -37,6 +39,7 @@ assert.equal((await req('/api/records','POST',record)).status,201);
 assert.equal((await req('/api/records','POST',record)).status,200);
 assert.equal((await req('/api/records')).data.rows[0].issuer,'ขวัญ');
 assert.equal((await req('/api/records/'+record.id+'/activity')).data.rows.length,1);
+assert.equal((await req('/api/records/'+record.id,'PATCH',{...record,due_date:'',version:1})).status,400);
 const update={...record,item:'แก้ไขชื่อ',issuer:'เดือน',version:1};
 assert.equal((await req('/api/records/'+record.id,'PATCH',{...update,issuer:'อื่น'})).status,400);
 assert.equal((await req('/api/records/'+record.id,'PATCH',update)).status,200);

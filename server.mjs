@@ -19,13 +19,14 @@ const output=r=>({...records.decorate(r),images:imageList(r)});
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const dateOK=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!isNaN(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s;
 function fail(message,status=400){throw Object.assign(new Error(message),{status});}
-function validate(b){
+function validate(b,requireDueDate=true){
  const out={issuer:b.issuer};
  if(!issuers.includes(out.issuer))fail('กรุณาเลือกผู้่ทำเรื่องเบิกจากรายชื่อที่กำหนด');
  for(const [k,max] of Object.entries({item:160,borrower:120,contact:160,description:2000})){out[k]=String(b[k]??'').trim();if(out[k].length>max)fail('ข้อความยาวเกินกำหนด');}
  if(!out.item||!out.borrower)fail('กรุณากรอกชื่อรายการและผู้ยืม');
  out.quantity=Number(b.quantity);if(!Number.isInteger(out.quantity)||out.quantity<1||out.quantity>100000)fail('จำนวนไม่ถูกต้อง');
  out.borrow_date=b.borrow_date;out.due_date=b.due_date||null;
+ if(requireDueDate&&!out.due_date)fail('กรุณาระบุกำหนดคืน');
  if(!dateOK(out.borrow_date)||out.due_date&&(!dateOK(out.due_date)||out.due_date<out.borrow_date))fail('วันที่ไม่ถูกต้อง หรือกำหนดคืนก่อนวันที่ยืม');
  return out;
 }
@@ -93,7 +94,7 @@ const server=http.createServer(async(req,res)=>{
    let p={created:[],removed:[]};db.exec('BEGIN');
    try{
     if(b.action==='return'||b.action==='reopen'){db.prepare('UPDATE records SET returned_date=?,version=version+1 WHERE id=?').run(b.action==='return'?today():null,r.id);}
-    else{const v=validate(b);p=photos(b,r);db.prepare('UPDATE records SET item=?,borrower=?,contact=?,description=?,quantity=?,borrow_date=?,due_date=?,photo=?,thumb=?,issuer=?,images=?,version=version+1 WHERE id=?').run(v.item,v.borrower,v.contact,v.description,v.quantity,v.borrow_date,v.due_date,p.images[0]?.photo||null,p.images[0]?.thumb||null,v.issuer,JSON.stringify(p.images),r.id);}
+    else{const v=validate(b,Boolean(r.due_date));p=photos(b,r);db.prepare('UPDATE records SET item=?,borrower=?,contact=?,description=?,quantity=?,borrow_date=?,due_date=?,photo=?,thumb=?,issuer=?,images=?,version=version+1 WHERE id=?').run(v.item,v.borrower,v.contact,v.description,v.quantity,v.borrow_date,v.due_date,p.images[0]?.photo||null,p.images[0]?.thumb||null,v.issuer,JSON.stringify(p.images),r.id);}
     records.audit(r.id,['return','reopen'].includes(b.action)?r.issuer:b.issuer,['return','reopen'].includes(b.action)?b.action:'edit');db.exec('COMMIT');
    }catch(e){db.exec('ROLLBACK');p.created.forEach(removePhotos);throw e;}
    p.removed.forEach(removePhotos);

@@ -55,3 +55,6 @@ Existing account/session tables and the old invitation file are retained on disk
 ## Multiple photos
 Records support up to three photos. Add photos together or one at a time, remove individual previews before saving, and browse full images with previous/next controls. Each file is compressed in the browser (15 MB source limit per file); server limits remain 700 KB full image and 100 KB thumbnail per image. The API accepts a final images array of retained record-owned references and new JPEG pairs, with a total 3.4 MB JSON request cap. A nullable images column preserves legacy single photos without rewriting them. Failed validation/conflicts preserve the current image set; removed files are cleaned up only after a committed edit.
 
+
+New entries require a planned return date (กำหนดคืน) on or after the borrowing date. Existing undated records can still be edited or returned; once a date is set, edits cannot clear it.
+
