@@ -1,0 +1,12 @@
+import {DatabaseSync,backup} from 'node:sqlite';
+import fs from 'node:fs';
+import path from 'node:path';
+const source=path.resolve(process.env.DATA_DIR||'data');
+const dest=path.resolve(process.argv[2]||'backups');
+if(dest===source||dest.startsWith(source+path.sep))throw new Error('Backup destination must be outside application data');
+const folder=path.join(dest,new Date().toISOString().replaceAll(':','-'));
+fs.mkdirSync(folder,{recursive:true});
+const db=new DatabaseSync(path.join(source,'borrow.sqlite'),{readOnly:true});
+await backup(db,path.join(folder,'borrow.sqlite'));db.close();
+fs.cpSync(path.join(source,'photos'),path.join(folder,'photos'),{recursive:true});
+console.log('Backup created at '+folder);
